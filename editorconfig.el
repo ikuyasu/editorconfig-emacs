@@ -272,6 +272,9 @@ number - `lisp-indent-offset' is not set only if indent_size is
          equal to this number.  For example, if this is set to 2,
          `lisp-indent-offset'will not be set only if indent_size is 2.")
 
+(defconst editorconfig-unset-value "unset"
+  "String used to unset properties in .editorconfig .")
+
 (defun editorconfig-string-integer-p (string)
   "Return non-nil if STRING represents integer."
   (and (stringp string)
@@ -416,34 +419,39 @@ TRIM-TRAILING-WS."
              (> (string-to-number length) 0))
     (setq fill-column (string-to-number length))))
 
-(defun editorconfig--is-a-mode-p (current want)
-  "Return non-nil if major mode CURRENT is a major mode WANT."
-  (or (eq current
-          want)
-      (let ((parent (get current 'derived-mode-parent)))
-        (and parent
-             (editorconfig--is-a-mode-p parent want)))))
-
 (defvar editorconfig--set-major-mode-already nil
   "Internal flag to avoid infinit call.")
 
+(defun editorconfig--set-major-mode-decide (filetype &optional filename)
+  "Get suitable major-mode from FILETYPE and FILENAME.
+If FILENAME is omitted filename of current buffer is used."
+  (cl-assert filetype)
+  (cl-assert (not (string= filetype "")))
+  (let* ((name (concat (or filename
+                           buffer-file-name)
+                       "."
+                       filetype)))
+    (assoc-default name
+                   auto-mode-alist
+                   'string-match)))
+(editorconfig--set-major-mode-decide "moge")
 (defun editorconfig-set-major-mode (filetype)
   "Set buffer `major-mode' by FILETYPE.
 
 FILETYPE should be s string like `\"ini\"`, if not nil or empty string."
-  (let ((mode (and filetype
-                   (not (string= filetype
-                                 ""))
-                   (intern (concat filetype
-                                   "-mode")))))
-    (when (and mode
-               (not (editorconfig--is-a-mode-p major-mode
-                                               mode)))
-      (if (fboundp mode)
-          (funcall mode)
-        (display-warning :error (format "Major-mode `%S' not found"
-                                        mode))
-        nil))))
+  (cl-assert buffer-file-name)
+  (when (not editorconfig--set-major-mode-already)
+    (let ((editorconfig--set-major-mode-already t))
+      (when (and filetype
+                 (not (string= filetype ""))
+                 (not (string= filetype editorconfig-unset-value)))
+
+        (let ((mode (editorconfig--set-major-mode-decide filetype)))
+          (if mode
+              (funcall mode)
+            (display-warning :error (format "Major-mode for `%s' not found"
+                                            filetype))
+            nil))))))
 
 (defun editorconfig-call-editorconfig-exec ()
   "Call EditorConfig core and return output."
